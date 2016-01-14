@@ -15,6 +15,22 @@ func main() {
 	addr := flag.String("addr", ":8000", "http listen on")
 	flag.Parse()
 
+	c := make(chan []byte)
+
+	go func() {
+
+		r := bufio.NewReader(os.Stdin)
+		for {
+			line, _, err := r.ReadLine()
+			if err != nil {
+				log.Debug(err)
+				close(c)
+				return
+			}
+			c <- line
+		}
+	}()
+
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 
 		content, err := ioutil.ReadAll(r.Body)
@@ -25,12 +41,8 @@ func main() {
 
 		log.Debug(r.Method, "BODY", string(content))
 
-		line, _, err := bufio.NewReader(os.Stdin).ReadLine()
-		if err != nil {
-			w.Write([]byte(err.Error()))
-			return
-		}
-
+		line := <-c
+		log.Debug("READ STDIN", string(line))
 		w.Write(line)
 	})
 
