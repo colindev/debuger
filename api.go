@@ -13,6 +13,7 @@ import (
 func main() {
 
 	addr := flag.String("addr", ":8000", "http listen on")
+	verbose := flag.Bool("v", false, "verbose")
 	flag.Parse()
 
 	c := make(chan []byte)
@@ -39,9 +40,16 @@ func main() {
 			return
 		}
 
+		if *verbose {
+			for k, v := range r.Header {
+				log.Debug(k, v)
+			}
+		}
+
 		log.Debug(r.Method, "BODY", string(content))
 
 		line := <-c
+
 		log.Debug("READ STDIN", string(line))
 		w.Write(line)
 	})
