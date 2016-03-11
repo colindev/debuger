@@ -1,4 +1,7 @@
-api: api.go
-	go build -o api api.go
+build-api: api/*.go
+	go build -o api/api api/*.go
 
-all: api
+build-ws: ws/*.go
+	go build -o ws/ws ws/*.go
+
+all: build-api build-ws
