@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"golang.org/x/net/websocket"
 )
@@ -23,41 +25,58 @@ func main() {
 		panic(err)
 	}
 
-	quit := make(chan bool)
+	quit := make(chan bool, 1)
+	shutdown := make(chan os.Signal, 1)
 	go func() {
 		var msg string
+		defer func() { shutdown <- syscall.SIGTERM }()
 		for {
 			select {
 			case <-quit:
-				break
+				quit <- true
+				return
 			default:
 				err := websocket.Message.Receive(conn, &msg)
 				if err != nil {
 					if err == io.EOF {
 						// server close
-						break
+						fmt.Println("server closed")
+						return
 					}
 					fmt.Println("Message receive error:", err)
-					break
+					return
 				}
 				fmt.Println("<--", msg)
 			}
 		}
 	}()
 
-	cli := bufio.NewReader(os.Stdin)
-	for {
-		line, _, err := cli.ReadLine()
-		if err != nil {
-			fmt.Println(err)
-			break
-		}
+	go func() {
+		cli := bufio.NewReader(os.Stdin)
+		for {
+			select {
+			case <-quit:
+				break
 
-		if err = websocket.Message.Send(conn, string(line)); err != nil {
-			fmt.Println("Message send error:", err)
-			break
+			default:
+				line, _, err := cli.ReadLine()
+				if err != nil {
+					fmt.Println(err)
+					break
+				}
+
+				if err = websocket.Message.Send(conn, string(line)); err != nil {
+					fmt.Println("Message send error:", err)
+					break
+				}
+			}
 		}
-	}
+		quit <- true
+	}()
+
+	signal.Notify(shutdown, syscall.SIGTERM, syscall.SIGINT)
+	<-shutdown
+
 	quit <- true
 	os.Exit(0)
 
