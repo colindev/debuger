@@ -4,10 +4,9 @@ import (
 	"bufio"
 	"flag"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"os"
-
-	"github.com/ngaut/log"
 )
 
 func main() {
@@ -24,7 +23,7 @@ func main() {
 		for {
 			line, _, err := r.ReadLine()
 			if err != nil {
-				log.Debug(err)
+				log.Println("[ERRO]", err)
 				close(c)
 				return
 			}
@@ -42,18 +41,18 @@ func main() {
 
 		if *verbose {
 			for k, v := range r.Header {
-				log.Debug(k, v)
+				log.Println("[DEBU]", k, v)
 			}
 		}
 
-		log.Debug(r.Method, "BODY", string(content))
+		log.Println("[DEBU]", r.Method, "BODY", string(content))
 
 		line := <-c
 
-		log.Debug("READ STDIN", string(line))
+		log.Println("[DEBU] READ STDIN", string(line))
 		w.Write(line)
 	})
 
-	log.Info("listen on", *addr)
-	log.Info(http.ListenAndServe(*addr, nil))
+	log.Println("[INFO] listen on", *addr)
+	log.Println("[INFO] http server shutdown", http.ListenAndServe(*addr, nil))
 }
