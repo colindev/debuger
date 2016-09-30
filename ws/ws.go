@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -13,16 +14,24 @@ import (
 
 func main() {
 
-	if len(os.Args) != 2 {
-		fmt.Println("Usage:", os.Args[0], "ws://host:port")
+	var (
+		wsAddr string
+		origin string
+	)
+
+	flag.StringVar(&origin, "origin", "http://localhost", "client origin")
+	flag.Parse()
+
+	if len(flag.Args()) != 1 {
+		fmt.Println("Usage:", os.Args[0], "ws[s]://host[:port]")
 		os.Exit(1)
 	}
+	wsAddr = flag.Arg(0)
 
-	wsAddr := os.Args[1]
-
-	conn, err := websocket.Dial(wsAddr, "", "http://localhost")
+	conn, err := websocket.Dial(wsAddr, "", origin)
 	if err != nil {
-		panic(err)
+		fmt.Println(err)
+		os.Exit(1)
 	}
 
 	quit := make(chan bool, 1)
@@ -56,21 +65,22 @@ func main() {
 		for {
 			select {
 			case <-quit:
-				break
+				goto quit
 
 			default:
 				line, _, err := cli.ReadLine()
 				if err != nil {
 					fmt.Println(err)
-					break
+					goto quit
 				}
 
 				if err = websocket.Message.Send(conn, string(line)); err != nil {
 					fmt.Println("Message send error:", err)
-					break
+					goto quit
 				}
 			}
 		}
+	quit:
 		quit <- true
 	}()
 
