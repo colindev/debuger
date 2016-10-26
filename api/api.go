@@ -3,6 +3,8 @@ package main
 import (
 	"bufio"
 	"flag"
+	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -11,25 +13,15 @@ import (
 
 func main() {
 
+	var (
+		verbose bool
+	)
+
 	addr := flag.String("addr", ":8000", "http listen on")
-	verbose := flag.Bool("v", false, "verbose")
+	flag.BoolVar(&verbose, "V", false, "verbose")
 	flag.Parse()
 
-	c := make(chan []byte)
-
-	go func() {
-
-		r := bufio.NewReader(os.Stdin)
-		for {
-			line, _, err := r.ReadLine()
-			if err != nil {
-				log.Println("[ERRO]", err)
-				close(c)
-				return
-			}
-			c <- line
-		}
-	}()
+	ln := []byte("\n")
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 
@@ -39,18 +31,30 @@ func main() {
 			return
 		}
 
-		if *verbose {
+		if verbose {
 			for k, v := range r.Header {
 				log.Println("[DEBU]", k, v)
 			}
 		}
 
-		log.Println("[DEBU]", r.Method, "BODY", string(content))
+		log.Println("[DEBU]", r.Method, "BODY")
+		fmt.Println("\033[35m" + string(content) + "\033[m")
 
-		line := <-c
-
-		log.Println("[DEBU] READ STDIN", string(line))
-		w.Write(line)
+		stdin := bufio.NewReader(os.Stdin)
+		for {
+			line, _, err := stdin.ReadLine()
+			if err == nil {
+				w.Write(append(line, ln...))
+				continue
+			}
+			switch err {
+			case io.EOF:
+				return
+			default:
+				log.Println("[ERRO]", err)
+				return
+			}
+		}
 	})
 
 	log.Println("[INFO] listen on", *addr)
