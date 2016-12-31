@@ -1,7 +1,10 @@
-build-api: api/*.go
-	go build -o api/api api/*.go
+all: bin/api bin/ws bin/nc
 
-build-ws: ws/*.go
-	go build -o ws/ws ws/*.go
+bin/api: api/*.go
+	go build -o bin/api api/*.go
 
-all: build-api build-ws
+bin/ws: ws/*.go
+	go build -o bin/ws ws/*.go
+
+bin/nc: nc/*.go
+	go build -o bin/nc nc/*.go
