@@ -35,7 +35,7 @@ func main() {
 
 	var (
 		listenMode bool
-		headers    Headers
+		headers    = Headers{}
 		verbose    bool
 	)
 
@@ -54,7 +54,11 @@ func main() {
 		os.Exit(2)
 	}
 
-	conn, err := getConn(args[0], listenMode, headers)
+	if verbose {
+		log.SetFlags(log.LstdFlags | log.Lshortfile)
+	}
+
+	conn, err := getConn(args[0], listenMode, headers, verbose)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -62,9 +66,12 @@ func main() {
 
 	go func() {
 		for {
-			_, p, err := conn.ReadMessage()
+			msgType, p, err := conn.ReadMessage()
 			if err != nil {
 				log.Fatal(err)
+			}
+			if verbose {
+				log.Println("message type:", msgType)
 			}
 
 			fmt.Println(string(p))
@@ -84,7 +91,7 @@ func main() {
 	}
 }
 
-func getConn(addr string, listenMode bool, headers Headers) (conn *websocket.Conn, err error) {
+func getConn(addr string, listenMode bool, headers Headers, verbose bool) (conn *websocket.Conn, err error) {
 
 	if !listenMode {
 		conn, _, err = websocket.DefaultDialer.Dial(addr, http.Header(headers))
@@ -98,6 +105,9 @@ func getConn(addr string, listenMode bool, headers Headers) (conn *websocket.Con
 	}
 	upgrader := websocket.Upgrader{}
 	http.Serve(listener, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if verbose {
+			log.Printf("%+v\n", r.Header)
+		}
 		conn, err = upgrader.Upgrade(w, r, nil)
 		listener.Close()
 	}))
