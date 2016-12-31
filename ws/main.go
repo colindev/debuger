@@ -2,92 +2,105 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"flag"
 	"fmt"
-	"io"
+	"log"
+	"net"
+	"net/http"
 	"os"
-	"os/signal"
-	"syscall"
+	"strings"
 
-	"golang.org/x/net/websocket"
+	"github.com/gorilla/websocket"
 )
+
+// Headers of request
+type Headers map[string][]string
+
+// Set header
+func (h Headers) Set(v string) error {
+	s := strings.SplitN(v, ":", 2)
+	if len(s) != 2 {
+		return errors.New("key:value")
+	}
+	h[s[0]] = append(h[s[0]], s[1])
+	return nil
+}
+
+func (h Headers) String() string {
+	return fmt.Sprintf("%+v", (map[string][]string)(h))
+}
 
 func main() {
 
 	var (
-		wsAddr string
-		origin string
+		listenMode bool
+		headers    Headers
+		verbose    bool
 	)
 
-	flag.StringVar(&origin, "origin", "http://localhost", "client origin")
-	flag.Parse()
-
-	if len(flag.Args()) != 1 {
-		fmt.Println("Usage:", os.Args[0], "ws[s]://host[:port]")
-		os.Exit(1)
+	cli := flag.CommandLine
+	cli.Usage = func() {
+		fmt.Println("Usage: command [option] ws[s]://host[:port][/path]")
+		cli.PrintDefaults()
 	}
-	wsAddr = flag.Arg(0)
+	cli.BoolVar(&verbose, "v", false, "verbose")
+	cli.BoolVar(&listenMode, "l", false, "listen mode")
+	cli.Var(&headers, "H", "header")
+	cli.Parse(os.Args[1:])
+	args := cli.Args()
+	if len(args) != 1 {
+		cli.Usage()
+		os.Exit(2)
+	}
 
-	conn, err := websocket.Dial(wsAddr, "", origin)
+	conn, err := getConn(args[0], listenMode, headers)
 	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+		log.Fatal(err)
+	}
+	defer conn.Close()
+
+	go func() {
+		for {
+			_, p, err := conn.ReadMessage()
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			fmt.Println(string(p))
+		}
+	}()
+
+	bufStdin := bufio.NewReader(os.Stdin)
+	for {
+		line, _, err := bufStdin.ReadLine()
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		if err := conn.WriteMessage(websocket.TextMessage, line); err != nil {
+			log.Fatal(err)
+		}
+	}
+}
+
+func getConn(addr string, listenMode bool, headers Headers) (conn *websocket.Conn, err error) {
+
+	if !listenMode {
+		conn, _, err = websocket.DefaultDialer.Dial(addr, http.Header(headers))
+		return
 	}
 
-	quit := make(chan bool, 1)
-	shutdown := make(chan os.Signal, 1)
-	go func() {
-		var msg string
-		defer func() { shutdown <- syscall.SIGTERM }()
-		for {
-			select {
-			case <-quit:
-				quit <- true
-				return
-			default:
-				err := websocket.Message.Receive(conn, &msg)
-				if err != nil {
-					if err == io.EOF {
-						// server close
-						fmt.Println("server closed")
-						return
-					}
-					fmt.Println("Message receive error:", err)
-					return
-				}
-				fmt.Println("<--", msg)
-			}
-		}
-	}()
+	s := strings.SplitN(addr, "://", 2)
+	listener, err := net.Listen("tcp", s[len(s)-1])
+	if err != nil {
+		log.Fatal(err)
+	}
+	upgrader := websocket.Upgrader{}
+	http.Serve(listener, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err = upgrader.Upgrade(w, r, nil)
+		listener.Close()
+	}))
 
-	go func() {
-		cli := bufio.NewReader(os.Stdin)
-		for {
-			select {
-			case <-quit:
-				goto quit
-
-			default:
-				line, _, err := cli.ReadLine()
-				if err != nil {
-					fmt.Println(err)
-					goto quit
-				}
-
-				if err = websocket.Message.Send(conn, string(line)); err != nil {
-					fmt.Println("Message send error:", err)
-					goto quit
-				}
-			}
-		}
-	quit:
-		quit <- true
-	}()
-
-	signal.Notify(shutdown, syscall.SIGTERM, syscall.SIGINT)
-	<-shutdown
-
-	quit <- true
-	os.Exit(0)
-
+	return
 }
