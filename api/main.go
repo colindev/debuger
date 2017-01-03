@@ -25,6 +25,8 @@ func main() {
 	flag.Parse()
 
 	ln := []byte{'\r', '\n'}
+	// 清空之前的輸入
+	stdin := bufio.NewReader(os.Stdin)
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		lc.Lock()
@@ -51,7 +53,6 @@ func main() {
 		fmt.Println("--- input response body")
 		defer fmt.Println("--- finish response")
 
-		stdin := bufio.NewReader(os.Stdin)
 		for {
 			line, _, err := stdin.ReadLine()
 			if err == nil {
