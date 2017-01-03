@@ -9,21 +9,30 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"sync"
 )
 
 func main() {
 
 	var (
 		verbose bool
+		addr    string
+		lc      sync.Mutex
 	)
 
-	addr := flag.String("addr", ":8000", "http listen on")
+	flag.StringVar(&addr, "addr", ":8000", "http listen on")
 	flag.BoolVar(&verbose, "V", false, "verbose")
 	flag.Parse()
 
-	ln := []byte("\n")
+	ln := []byte{'\r', '\n'}
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		lc.Lock()
+		defer lc.Unlock()
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			log.Fatal("response writer can't assert to http.Flusher")
+		}
 
 		content, err := ioutil.ReadAll(r.Body)
 		if err != nil {
@@ -31,20 +40,26 @@ func main() {
 			return
 		}
 
+		fmt.Printf("%s %s\n", r.Method, r.URL)
 		if verbose {
 			for k, v := range r.Header {
-				log.Println("[DEBU]", k, v)
+				fmt.Printf("\033[2;33m%s:\033[m %v\n", k, v)
 			}
 		}
 
-		log.Println("[DEBU]", r.Method, "BODY")
-		fmt.Println("\033[35m" + string(content) + "\033[m")
+		fmt.Println("\033[2;35m--- body start\n" + string(content) + "\n--- body end\033[m")
+		fmt.Println("--- input response body")
+		defer fmt.Println("--- finish response")
 
 		stdin := bufio.NewReader(os.Stdin)
 		for {
 			line, _, err := stdin.ReadLine()
 			if err == nil {
 				w.Write(append(line, ln...))
+				flusher.Flush()
+				if len(line) == 0 {
+					return
+				}
 				continue
 			}
 			switch err {
@@ -57,6 +72,6 @@ func main() {
 		}
 	})
 
-	log.Println("[INFO] listen on", *addr)
-	log.Println("[INFO] http server shutdown", http.ListenAndServe(*addr, nil))
+	log.Println("[INFO] listen on", addr)
+	log.Println("[INFO] http server shutdown", http.ListenAndServe(addr, nil))
 }
